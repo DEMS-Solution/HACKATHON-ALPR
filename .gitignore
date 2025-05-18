@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Storage folder
+Storage/Uploads/
+
 # C extensions
 *.so
 
