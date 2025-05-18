@@ -62,28 +62,23 @@ Kami percaya bahwa masa depan parkir adalah **otomatis, aman, dan cerdas** — d
 ```bash
 .
 ├── Config/
-│ ├── pycache/
 │ ├── Yolo/
 │ │ ├── app.py
 │ │ ├── db.py
 │ └── requirements.txt
 │
 ├── Controller/
-│ ├── pycache/
 │ ├── Helpers/
 │ └── OCRController.py
 │
 ├── Models/
-│ ├── pycache/
 │ └── PlatNomor.py
 │
 ├── Routes/
-│ ├── pycache/
 │ └── api.py
 │
 ├── Storage/
 │ └── Uploads/
-│ └── gambar3.jpeg
 │
 ├── .env
 ├── .env.example
