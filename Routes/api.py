@@ -33,19 +33,23 @@ def upload_image():
     filepath = os.path.join(os.getenv('UPLOAD_FOLDER'), filename)
     file.save(filepath)
 
-    plate_number, plate_type, plate_color = detect_plate(filepath)
+    plate_number, plate_type, plate_color, plate_box = detect_plate(filepath, save_visualization=True)
+    
+    # Generate path for the visualization image
+    viz_path = os.path.splitext(filepath)[0] + "_detected.jpg"
+    
+    if plate_number == "UNKNOWN":
+        return response_api(400, 'Error', 'No plate detected', 'Plate number not detected')
 
     last_detection = Detection.query.filter_by(plate_number=plate_number, type=plate_type, color=plate_color) \
                                     .order_by(Detection.timestamp.desc()).first()
-
-    if plate_number == "UNKNOWN":
-        return response_api(400, 'Error', 'No plate detected', 'Plate number not detected')
 
     if last_detection:
         return response_api(200, 'Success', 'Deteksi Plat Nomor, Berhasil !', {
             'plate_number': plate_number,
             'type': plate_type,
             'color': plate_color,
+            'visualization_path': viz_path
         })
 
     detection = Detection(
@@ -64,8 +68,8 @@ def upload_image():
         'plate_number': plate_number,
         'type': plate_type,
         'color': plate_color,
+        'visualization_path': viz_path
     })
-
 
 @api.route('/api/history', methods=['GET'])
 def get_history():

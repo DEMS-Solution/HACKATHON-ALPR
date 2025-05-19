@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import re
+import os
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from collections import Counter
@@ -74,13 +75,15 @@ def detect_plate_color(plate_img):
     else:
         return 'UNKNOWN'
 
-def detect_plate(image_path):
+def detect_plate(image_path, save_visualization=True):
     image = cv2.imread(image_path)
+    original_image = image.copy()
     results = yolo_model(image)[0]
 
     best_plate = ''
     plate_type = 'UNKNOWN'
     plate_color = 'UNKNOWN'
+    plate_box = None
 
     for result in results.boxes:
         cls_id = int(result.cls[0])
@@ -102,6 +105,7 @@ def detect_plate(image_path):
             if len(text) >= 5 and conf > 0.6:
                 best_plate = text
                 plate_color = color
+                plate_box = box  # Save the bounding box coordinates
 
                 for type_name, pattern in SPECIAL_PLATES.items():
                     if re.match(pattern, best_plate):
@@ -111,4 +115,19 @@ def detect_plate(image_path):
                     plate_type = 'CIVIL'
                 break
 
-    return best_plate if best_plate else 'UNKNOWN', plate_type, plate_color
+    # Draw bounding box on the image if a plate was detected
+    if plate_box is not None and save_visualization:
+        x1, y1, x2, y2 = plate_box
+        
+        # Draw a rectangle around the license plate
+        cv2.rectangle(original_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        
+        # Add text with plate information
+        text = f"{best_plate} ({plate_type}, {plate_color})"
+        cv2.putText(original_image, text, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        # Save the image with visualization
+        output_path = os.path.splitext(image_path)[0] + "_detected.jpg"
+        cv2.imwrite(output_path, original_image)
+
+    return best_plate if best_plate else 'UNKNOWN', plate_type, plate_color, plate_box
