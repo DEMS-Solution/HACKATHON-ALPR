@@ -28,49 +28,69 @@ def login():
 
 @api.route('/api/upload', methods=['POST'])
 def upload_image():
+    if 'image' not in request.files:
+        return response_api(400, 'Error', 'No image provided', 'Form field "image" is required.')
+
     file = request.files['image']
+    if file.filename == '':
+        return response_api(400, 'Error', 'No image selected', 'File name is empty.')
+
     filename = secure_filename(file.filename)
-    filepath = os.path.join(os.getenv('UPLOAD_FOLDER'), filename)
+    upload_folder = os.getenv('UPLOAD_FOLDER', 'uploads')  # fallback jika env tidak diset
+    os.makedirs(upload_folder, exist_ok=True)
+
+    filepath = os.path.join(upload_folder, filename)
     file.save(filepath)
 
-    plate_number, plate_type, plate_color, plate_box = detect_plate(filepath, save_visualization=True)
-    
-    # Generate path for the visualization image
-    viz_path = os.path.splitext(filepath)[0] + "_detected.jpg"
-    
-    if plate_number == "UNKNOWN":
-        return response_api(400, 'Error', 'No plate detected', 'Plate number not detected')
+    try:
+        # Call ALPR Detection
+        plate_number, plate_type, plate_color, plate_box = detect_plate(filepath, save_visualization=True)
 
-    last_detection = Detection.query.filter_by(plate_number=plate_number, type=plate_type, color=plate_color) \
-                                    .order_by(Detection.timestamp.desc()).first()
+        # Path untuk hasil visualisasi YOLO
+        viz_path = os.path.splitext(filepath)[0] + "_detected.jpg"
 
-    if last_detection:
-        return response_api(200, 'Success', 'Deteksi Plat Nomor, Berhasil !', {
+        if plate_number == "UNKNOWN":
+            return response_api(400, 'Error', 'No plate detected', 'Plat nomor tidak terdeteksi.')
+
+        # Cek apakah plat nomor sudah pernah terdeteksi sebelumnya
+        last_detection = Detection.query.filter_by(
+            plate_number=plate_number,
+            type=plate_type,
+            color=plate_color
+        ).order_by(Detection.timestamp.desc()).first()
+
+        if last_detection:
+            return response_api(200, 'Success', 'Deteksi plat nomor berhasil disimpan.', {
+                'plate_number': plate_number,
+                'type': plate_type,
+                'color': plate_color,
+                'visualization_path': viz_path
+            })
+
+        # Simpan deteksi baru ke DB
+        detection = Detection(
+            id=uuid.uuid4(),
+            plate_number=plate_number,
+            image_path=filepath,
+            type=plate_type,
+            color=plate_color,
+            timestamp=datetime.now(),
+            is_validated=False
+        )
+        db.session.add(detection)
+        db.session.commit()
+
+        return response_api(200, 'Success', 'Deteksi plat nomor berhasil disimpan.', {
             'plate_number': plate_number,
             'type': plate_type,
             'color': plate_color,
             'visualization_path': viz_path
         })
 
-    detection = Detection(
-        id=uuid.uuid4(),
-        plate_number=plate_number,
-        image_path=filepath,
-        type=plate_type,
-        color=plate_color,
-        timestamp=datetime.now(),
-        is_validated=False
-    )
-    db.session.add(detection)
-    db.session.commit()
-
-    return response_api(200, 'Success', 'Deteksi Plat Nomor, Berhasil !', {
-        'plate_number': plate_number,
-        'type': plate_type,
-        'color': plate_color,
-        'visualization_path': viz_path
-    })
-
+    except Exception as e:
+        return response_api(500, 'Error', 'Internal Server Error', str(e))
+    
+    
 @api.route('/api/history', methods=['GET'])
 def get_history():
     detections = Detection.query.order_by(Detection.timestamp.desc()).all()
