@@ -105,7 +105,3 @@ def detect_plate(image_path, save_visualization=False):
         cv2.imwrite(base_path + '_detected.jpg', original_image)
     
     return best_plate if best_plate else 'UNKNOWN', plate_type, plate_color, plate_box
-
-
-if __name__ == "__main__":
-    detect_plate('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar4.jpeg', save_visualization=True)
