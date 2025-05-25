@@ -13,7 +13,7 @@ from ultralytics import YOLO
 from Helpers.Helper import response_api
 
 # Load YOLO model
-yolo_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Config/Yolo/license_plate_detector.pt')
+yolo_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Config/Yolo/best.pt')
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))
@@ -306,10 +306,10 @@ def detect_plate(image_input, vehicle_type):
         # Draw bounding box on crop
         box_top_left = (x1 - crop_x1, y1 - crop_y1)
         box_bottom_right = (x2 - crop_x1, y2 - crop_y1)
-        cv2.rectangle(vis_crop, box_top_left, box_bottom_right, (0, 255, 0), 3)
+        cv2.rectangle(vis_crop, box_top_left, box_bottom_right, (0, 255, 0), 1)
         
         # Draw bounding box on full image
-        cv2.rectangle(vis_full, (x1, y1), (x2, y2), (0, 255, 0), 3)
+        cv2.rectangle(vis_full, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
         # Generate filenames
         base_name = os.path.splitext(filename)[0]
@@ -346,7 +346,7 @@ if __name__ == "__main__":
     # print(json.dumps(result, indent=4))
     
     # TEST DENGAN BASE64 INPUT
-    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar14.jpg', "rb") as f:
+    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar6.jpeg', "rb") as f:
         img_bytes = f.read()
         b64_str = base64.b64encode(img_bytes).decode("utf-8")
         b64_input = f"data:image/jpeg;base64,{b64_str}"
