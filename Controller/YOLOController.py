@@ -3,6 +3,8 @@ import cv2
 import base64
 import numpy as np
 import json
+import sys
+import contextlib
 
 from PIL import Image
 from io import BytesIO
@@ -16,6 +18,24 @@ yolo_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing App
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))
 os.makedirs(upload_folder, exist_ok=True)
+
+@contextlib.contextmanager
+def delete_debug_yolo():
+    with open(os.devnull, 'w') as devnull:
+        # Save actual stdout/stderr file descriptors
+        old_stdout_fileno = os.dup(sys.stdout.fileno())
+        old_stderr_fileno = os.dup(sys.stderr.fileno())
+
+        # Redirect stdout and stderr to devnull
+        os.dup2(devnull.fileno(), sys.stdout.fileno())
+        os.dup2(devnull.fileno(), sys.stderr.fileno())
+
+        try:
+            yield
+        finally:
+            # Restore original stdout and stderr
+            os.dup2(old_stdout_fileno, sys.stdout.fileno())
+            os.dup2(old_stderr_fileno, sys.stderr.fileno())
 
 def get_unique_base64_folder():
     """
@@ -331,5 +351,8 @@ if __name__ == "__main__":
         b64_str = base64.b64encode(img_bytes).decode("utf-8")
         b64_input = f"data:image/jpeg;base64,{b64_str}"
     
-    result_b64 = detect_plate(b64_input, "motorcycle")
+    with delete_debug_yolo():
+        result_b64 = detect_plate(b64_input, "motorcycle")
+
+    result_b64.pop('debug', None)
     print(json.dumps(result_b64, indent=4))
