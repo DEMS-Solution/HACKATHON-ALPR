@@ -14,7 +14,7 @@ from Helpers.Helper import response_api
 
 # Load both YOLO models
 vehicle_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/vehicle_detector2.pt') 
-plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/license_plate_detector3.pt')
+plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/license_plate_detector2.pt')
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))
@@ -533,7 +533,7 @@ if __name__ == "__main__":
     # print(json.dumps(result, indent=4))
     
     # TEST DENGAN BASE64 INPUT
-    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar24.jpg', "rb") as f:
+    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar28.jpeg', "rb") as f:
         img_bytes = f.read()
         b64_str = base64.b64encode(img_bytes).decode("utf-8")
         b64_input = f"data:image/jpeg;base64,{b64_str}"
