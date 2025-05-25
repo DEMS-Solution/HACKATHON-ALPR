@@ -5,6 +5,9 @@ import numpy as np
 import json
 import sys
 import contextlib
+import concurrent.futures
+from typing import List, Tuple, Dict, Any
+from functools import lru_cache
 
 from PIL import Image
 from io import BytesIO
@@ -12,22 +15,34 @@ from ultralytics import YOLO
 
 from Helpers.Helper import response_api
 
-# Load both YOLO models
-vehicle_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/vehicle_detector3.pt') 
-plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/license_plate_detector5.pt')
+# Load YOLO models - separated for better specialization
+car_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/car.pt')
+motorcycle_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/bike.pt') 
+plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/plate.pt')
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))
 os.makedirs(upload_folder, exist_ok=True)
 
-# Vehicle class mapping (adjust based on your vehicle model)
-VEHICLE_CLASSES = {
-    'car': ['car', 'sedan', 'suv', 'truck', 'van', 'bus'],
-    'motorcycle': ['motorcycle', 'bike', 'scooter', 'motorbike']
+# Optimized preprocessing parameters
+PREPROCESSING_CONFIGS = {
+    'car': {
+        'gamma_values': [0.6, 0.8, 1.2],
+        'clahe_configs': [(3.0, (8,8)), (5.0, (4,4))],
+        'brightness_contrast': [(1.3, 40), (1.6, 60)],
+        'confidence_thresholds': [0.25, 0.15, 0.1]
+    },
+    'motorcycle': {
+        'gamma_values': [0.4, 0.5, 0.7],
+        'clahe_configs': [(4.0, (4,4)), (6.0, (2,2))],
+        'brightness_contrast': [(1.8, 80), (2.2, 60)],
+        'confidence_thresholds': [0.2, 0.1, 0.05]
+    }
 }
 
 @contextlib.contextmanager
 def delete_debug_yolo():
+    """Suppress YOLO output for cleaner processing"""
     with open(os.devnull, 'w') as devnull:
         old_stdout_fileno = os.dup(sys.stdout.fileno())
         old_stderr_fileno = os.dup(sys.stderr.fileno())
@@ -40,6 +55,7 @@ def delete_debug_yolo():
             os.dup2(old_stderr_fileno, sys.stderr.fileno())
 
 def get_unique_base64_folder():
+    """Generate unique folder for base64 images"""
     index = 1
     while True:
         folder_name = f"{index}_img_base64"
@@ -48,7 +64,8 @@ def get_unique_base64_folder():
             return folder_name, folder_path
         index += 1
 
-def create_output_folder(filename, is_base64=False):
+def create_output_folder(filename: str, is_base64: bool = False) -> Tuple[str, str]:
+    """Create output folder for results"""
     if is_base64:
         folder_name, output_dir = get_unique_base64_folder()
         os.makedirs(output_dir, exist_ok=True)
@@ -59,201 +76,235 @@ def create_output_folder(filename, is_base64=False):
         os.makedirs(output_dir, exist_ok=True)
     return output_dir, folder_name
 
-def enhance_night_visibility(image):
-    """Enhanced preprocessing specifically for night/low-light images"""
-    # Convert to different color spaces for better analysis
-    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    
-    enhanced_images = []
-    
-    # 1. Extreme CLAHE on LAB L-channel for night images
-    clahe_extreme = cv2.createCLAHE(clipLimit=8.0, tileGridSize=(4,4))
-    lab[:,:,0] = clahe_extreme.apply(lab[:,:,0])
-    clahe_result = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-    enhanced_images.append(("clahe_extreme", clahe_result))
-    
-    # 2. Histogram equalization on V channel
-    hsv_copy = hsv.copy()
-    hsv_copy[:,:,2] = cv2.equalizeHist(hsv_copy[:,:,2])
-    hsv_eq = cv2.cvtColor(hsv_copy, cv2.COLOR_HSV2BGR)
-    enhanced_images.append(("hsv_hist_eq", hsv_eq))
-    
-    # 3. Adaptive gamma correction (focused on best values for license plates)
-    for gamma in [0.4, 0.5, 0.6]:
-        inv_gamma = 1.0 / gamma
-        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-        gamma_img = cv2.LUT(image, table)
-        enhanced_images.append((f"gamma_{gamma}", gamma_img))
-    
-    # 4. Brightness and contrast adjustment (optimized combinations)
-    brightness_contrast_configs = [
-        (1.8, 80),   # High contrast, very bright
-        (2.2, 60),   # Balanced enhancement
-        (1.5, 100),  # Very bright
-    ]
-    
-    for alpha, beta in brightness_contrast_configs:
-        enhanced = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
-        enhanced_images.append((f"bright_contrast_{alpha}_{beta}", enhanced))
-    
-    return enhanced_images
+@lru_cache(maxsize=32)
+def get_gamma_table(gamma: float) -> np.ndarray:
+    """Cached gamma correction table for performance"""
+    inv_gamma = 1.0 / gamma
+    return np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
 
-def preprocess_image_optimized(image):
-    """Optimized preprocessing with focus on night/challenging conditions"""
+def apply_advanced_clahe(image: np.ndarray, clip_limit: float, tile_size: Tuple[int, int]) -> np.ndarray:
+    """Apply CLAHE with optimized parameters"""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_size)
+    lab[:,:,0] = clahe.apply(lab[:,:,0])
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+def apply_multi_scale_enhancement(image: np.ndarray) -> np.ndarray:
+    """Multi-scale enhancement for better plate visibility"""
+    # Gaussian pyramid for multi-scale processing
+    pyramid = [image]
+    temp = image.copy()
+    for _ in range(2):
+        temp = cv2.pyrDown(temp)
+        pyramid.append(temp)
+    
+    # Process each scale
+    enhanced_pyramid = []
+    for img in pyramid:
+        # Enhanced CLAHE
+        enhanced = apply_advanced_clahe(img, 4.0, (4, 4))
+        # Sharpening kernel
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        enhanced = cv2.filter2D(enhanced, -1, kernel)
+        enhanced_pyramid.append(enhanced)
+    
+    # Reconstruct from pyramid
+    result = enhanced_pyramid[0]
+    for i in range(1, len(enhanced_pyramid)):
+        upsampled = enhanced_pyramid[i]
+        for _ in range(i):
+            upsampled = cv2.pyrUp(upsampled)
+        # Resize to match original if needed
+        if upsampled.shape[:2] != result.shape[:2]:
+            upsampled = cv2.resize(upsampled, (result.shape[1], result.shape[0]))
+        result = cv2.addWeighted(result, 0.7, upsampled, 0.3, 0)
+    
+    return result
+
+def enhance_for_plate_detection(image: np.ndarray, vehicle_type: str) -> List[Tuple[str, np.ndarray]]:
+    """Enhanced preprocessing specifically optimized for license plate detection"""
+    config = PREPROCESSING_CONFIGS[vehicle_type]
     processed_images = []
     
     # Original image
     processed_images.append(("original", image))
     
-    # Night-specific enhancements
-    night_enhanced = enhance_night_visibility(image)
-    processed_images.extend(night_enhanced)
+    # Multi-scale enhancement
+    multi_scale = apply_multi_scale_enhancement(image)
+    processed_images.append(("multi_scale", multi_scale))
     
-    # Additional standard preprocessing
-    # CLAHE variations (reduced for efficiency)
-    clahe_configs = [(2.0, (8,8)), (4.0, (4,4))]
-    for clip_limit, tile_size in clahe_configs:
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_size)
-        lab[:,:,0] = clahe.apply(lab[:,:,0])
-        clahe_img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+    # Optimized gamma correction
+    for gamma in config['gamma_values']:
+        table = get_gamma_table(gamma)
+        gamma_img = cv2.LUT(image, table)
+        processed_images.append((f"gamma_{gamma}", gamma_img))
+    
+    # Advanced CLAHE variations
+    for clip_limit, tile_size in config['clahe_configs']:
+        clahe_img = apply_advanced_clahe(image, clip_limit, tile_size)
         processed_images.append((f"clahe_{clip_limit}_{tile_size[0]}x{tile_size[1]}", clahe_img))
     
-    # Bilateral filter for noise reduction
-    bilateral = cv2.bilateralFilter(image, 9, 75, 75)
-    processed_images.append(("bilateral", bilateral))
+    # Brightness and contrast adjustment
+    for alpha, beta in config['brightness_contrast']:
+        enhanced = cv2.convertScaleAbs(image, alpha=alpha, beta=beta)
+        processed_images.append((f"bright_contrast_{alpha}_{beta}", enhanced))
+    
+    # Edge enhancement for plate boundaries
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    edge_enhanced = cv2.addWeighted(image, 0.8, edges_colored, 0.2, 0)
+    processed_images.append(("edge_enhanced", edge_enhanced))
+    
+    # Histogram equalization on HSV
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    hsv[:,:,2] = cv2.equalizeHist(hsv[:,:,2])
+    hsv_eq = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+    processed_images.append(("hsv_equalized", hsv_eq))
     
     return processed_images
 
-def detect_vehicles(image, vehicle_type, debug_info):
-    """Stage 1: Detect vehicles in the image"""
+def detect_vehicles_parallel(image: np.ndarray, vehicle_type: str, debug_info: List[str]) -> List[Dict[str, Any]]:
+    """Optimized vehicle detection with parallel processing"""
     detected_vehicles = []
     
-    # Preprocess image for vehicle detection
-    processed_images = preprocess_image_optimized(image)
+    # Select appropriate model
+    model = car_model if vehicle_type == "car" else motorcycle_model
+    config = PREPROCESSING_CONFIGS[vehicle_type]
     
-    # Vehicle detection parameters
-    confidence_thresholds = [0.3, 0.2, 0.1]  # Higher confidence for vehicle detection
+    debug_info.append(f"=== STAGE 1: {vehicle_type.upper()} DETECTION ===")
     
-    debug_info.append("=== STAGE 1: VEHICLE DETECTION ===")
+    # Get preprocessed images
+    processed_images = enhance_for_plate_detection(image, vehicle_type)
     
-    for method_name, proc_img in processed_images[:3]:  # Use top 3 preprocessing methods for efficiency
-        for conf_thresh in confidence_thresholds:
-            try:
-                with delete_debug_yolo():
-                    results = vehicle_model(proc_img, conf=conf_thresh, imgsz=640, verbose=False)[0]
-                
-                if results.boxes is not None and len(results.boxes) > 0:
-                    for result in results.boxes:
-                        x1, y1, x2, y2 = result.xyxy[0].cpu().numpy().astype(int)
-                        confidence = float(result.conf[0].cpu().numpy())
-                        class_id = int(result.cls[0].cpu().numpy())
-                        
-                        # Get class name from model
-                        class_name = vehicle_model.names[class_id].lower()
-                        
-                        # Check if detected vehicle matches the target type
-                        is_target_vehicle = False
-                        for vehicle_category, class_list in VEHICLE_CLASSES.items():
-                            if vehicle_category == vehicle_type and any(vc in class_name for vc in class_list):
-                                is_target_vehicle = True
-                                break
-                        
-                        if is_target_vehicle and is_valid_vehicle_detection([x1, y1, x2, y2], image.shape):
-                            vehicle_info = {
-                                'box': [x1, y1, x2, y2],
-                                'confidence': confidence,
-                                'class_name': class_name,
-                                'method': method_name
-                            }
-                            detected_vehicles.append(vehicle_info)
-                            debug_info.append(f"Vehicle detected: {class_name}, conf={confidence:.4f}, box=[{x1},{y1},{x2},{y2}]")
+    # Use only top performing preprocessing methods for speed
+    top_methods = processed_images[:4]  # Limit to 4 best methods
+    
+    def detect_in_image(args):
+        method_name, proc_img, conf_thresh = args
+        detections = []
+        try:
+            with delete_debug_yolo():
+                results = model(proc_img, conf=conf_thresh, imgsz=640, verbose=False)[0]
             
-            except Exception as e:
-                debug_info.append(f"Error in vehicle detection with {method_name}: {str(e)}")
-                continue
+            if results.boxes is not None and len(results.boxes) > 0:
+                for result in results.boxes:
+                    x1, y1, x2, y2 = result.xyxy[0].cpu().numpy().astype(int)
+                    confidence = float(result.conf[0].cpu().numpy())
+                    class_id = int(result.cls[0].cpu().numpy())
+                    class_name = model.names[class_id].lower()
+                    
+                    if is_valid_vehicle_detection([x1, y1, x2, y2], image.shape, vehicle_type):
+                        detections.append({
+                            'box': [x1, y1, x2, y2],
+                            'confidence': confidence,
+                            'class_name': class_name,
+                            'method': method_name
+                        })
+        except Exception as e:
+            debug_info.append(f"Error in vehicle detection: {str(e)}")
+        
+        return detections
     
-    # Remove duplicate vehicles using NMS
-    unique_vehicles = non_maximum_suppression_vehicles(detected_vehicles)
+    # Parallel processing
+    tasks = []
+    for method_name, proc_img in top_methods:
+        for conf_thresh in config['confidence_thresholds']:
+            tasks.append((method_name, proc_img, conf_thresh))
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(detect_in_image, tasks)
+        for result in results:
+            detected_vehicles.extend(result)
+    
+    # Remove duplicates using optimized NMS
+    unique_vehicles = non_maximum_suppression_optimized(detected_vehicles, overlap_threshold=0.5)
     debug_info.append(f"Unique vehicles after NMS: {len(unique_vehicles)}")
     
     return unique_vehicles
 
-def detect_plates_in_vehicles(image, vehicles, vehicle_type, debug_info):
-    """Stage 2: Detect license plates within detected vehicles"""
+def detect_plates_in_regions(image: np.ndarray, regions: List[Dict], vehicle_type: str, debug_info: List[str]) -> List[Dict[str, Any]]:
+    """Optimized plate detection within vehicle regions"""
     all_plate_detections = []
+    config = PREPROCESSING_CONFIGS[vehicle_type]
     
     debug_info.append("=== STAGE 2: LICENSE PLATE DETECTION ===")
     
-    if not vehicles:
-        debug_info.append("No vehicles detected, searching entire image for plates")
-        # If no vehicles detected, search entire image
-        vehicles = [{'box': [0, 0, image.shape[1], image.shape[0]], 'confidence': 1.0, 'class_name': 'unknown'}]
+    if not regions:
+        debug_info.append("No vehicles detected, searching entire image")
+        regions = [{'box': [0, 0, image.shape[1], image.shape[0]], 'confidence': 1.0, 'class_name': 'full_image'}]
     
-    for i, vehicle in enumerate(vehicles):
-        vx1, vy1, vx2, vy2 = vehicle['box']
-        debug_info.append(f"Searching for plates in vehicle #{i+1}: {vehicle['class_name']}")
+    def detect_plates_in_region(args):
+        region_idx, region = args
+        region_detections = []
         
-        # Extract vehicle region with some padding
-        padding = 20
-        crop_x1 = max(0, vx1 - padding)
-        crop_y1 = max(0, vy1 - padding)
-        crop_x2 = min(image.shape[1], vx2 + padding)
-        crop_y2 = min(image.shape[0], vy2 + padding)
+        vx1, vy1, vx2, vy2 = region['box']
+        
+        # Smart cropping with adaptive padding
+        padding_x = max(10, int((vx2 - vx1) * 0.1))
+        padding_y = max(10, int((vy2 - vy1) * 0.1))
+        
+        crop_x1 = max(0, vx1 - padding_x)
+        crop_y1 = max(0, vy1 - padding_y)
+        crop_x2 = min(image.shape[1], vx2 + padding_x)
+        crop_y2 = min(image.shape[0], vy2 + padding_y)
         
         vehicle_crop = image[crop_y1:crop_y2, crop_x1:crop_x2]
         
         if vehicle_crop.size == 0:
-            continue
+            return region_detections
         
-        # Preprocess vehicle crop for plate detection
-        processed_crops = preprocess_image_optimized(vehicle_crop)
+        # Enhanced preprocessing for the crop
+        processed_crops = enhance_for_plate_detection(vehicle_crop, vehicle_type)
         
-        # Plate detection parameters (more aggressive for cropped regions)
-        confidence_thresholds = [0.1, 0.05, 0.03, 0.01]
-        iou_thresholds = [0.45, 0.3]
-        
-        for method_name, proc_crop in processed_crops:
-            for conf_thresh in confidence_thresholds:
-                for iou_thresh in iou_thresholds:
-                    try:
-                        with delete_debug_yolo():
-                            results = plate_model(proc_crop, conf=conf_thresh, iou=iou_thresh, 
-                                                imgsz=640, augment=True, verbose=False)[0]
-                        
-                        if results.boxes is not None and len(results.boxes) > 0:
-                            for result in results.boxes:
-                                px1, py1, px2, py2 = result.xyxy[0].cpu().numpy().astype(int)
-                                confidence = float(result.conf[0].cpu().numpy())
-                                
-                                # Convert coordinates back to original image space
-                                global_x1 = crop_x1 + px1
-                                global_y1 = crop_y1 + py1
-                                global_x2 = crop_x1 + px2
-                                global_y2 = crop_y1 + py2
-                                
-                                # Validate plate detection
-                                if is_valid_plate_detection_improved([global_x1, global_y1, global_x2, global_y2], 
-                                                                   image.shape, vehicle_type):
-                                    detection_info = {
-                                        'box': [global_x1, global_y1, global_x2, global_y2],
-                                        'confidence': confidence,
-                                        'method': method_name,
-                                        'vehicle_index': i,
-                                        'vehicle_confidence': vehicle['confidence']
-                                    }
-                                    all_plate_detections.append(detection_info)
-                                    debug_info.append(f"Plate found in vehicle #{i+1}: conf={confidence:.4f}, box=[{global_x1},{global_y1},{global_x2},{global_y2}]")
+        # Use top 3 preprocessing methods for speed
+        for method_name, proc_crop in processed_crops[:3]:
+            # More aggressive confidence thresholds for cropped regions
+            for conf_thresh in [0.05, 0.03, 0.01]:
+                try:
+                    with delete_debug_yolo():
+                        results = plate_model(proc_crop, conf=conf_thresh, iou=0.3, 
+                                            imgsz=640, augment=True, verbose=False)[0]
                     
-                    except Exception as e:
-                        debug_info.append(f"Error in plate detection: {str(e)}")
-                        continue
+                    if results.boxes is not None and len(results.boxes) > 0:
+                        for result in results.boxes:
+                            px1, py1, px2, py2 = result.xyxy[0].cpu().numpy().astype(int)
+                            confidence = float(result.conf[0].cpu().numpy())
+                            
+                            # Convert to global coordinates
+                            global_x1 = crop_x1 + px1
+                            global_y1 = crop_y1 + py1
+                            global_x2 = crop_x1 + px2
+                            global_y2 = crop_y1 + py2
+                            
+                            if is_valid_plate_detection_optimized([global_x1, global_y1, global_x2, global_y2], 
+                                                                image.shape, vehicle_type):
+                                region_detections.append({
+                                    'box': [global_x1, global_y1, global_x2, global_y2],
+                                    'confidence': confidence,
+                                    'method': method_name,
+                                    'vehicle_index': region_idx,
+                                    'vehicle_confidence': region['confidence']
+                                })
+                
+                except Exception as e:
+                    debug_info.append(f"Error in plate detection: {str(e)}")
+                    continue
+        
+        return region_detections
+    
+    # Parallel processing of regions
+    tasks = [(i, region) for i, region in enumerate(regions)]
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        results = executor.map(detect_plates_in_region, tasks)
+        for result in results:
+            all_plate_detections.extend(result)
     
     return all_plate_detections
 
-def is_valid_vehicle_detection(box, image_shape):
-    """Validate vehicle detection"""
+def is_valid_vehicle_detection(box: List[int], image_shape: Tuple[int, int, int], vehicle_type: str) -> bool:
+    """Enhanced vehicle validation with type-specific criteria"""
     x1, y1, x2, y2 = box
     width = x2 - x1
     height = y2 - y1
@@ -261,20 +312,33 @@ def is_valid_vehicle_detection(box, image_shape):
     
     img_height, img_width = image_shape[:2]
     img_area = img_height * img_width
-    
-    # Vehicle should be reasonably sized
     area_ratio = area / img_area
-    if area_ratio < 0.01 or area_ratio > 0.8:  # Vehicle should be 1-80% of image
-        return False
     
-    # Basic size check
-    if width < 50 or height < 30:
-        return False
+    if vehicle_type == "car":
+        # Cars are generally larger
+        if area_ratio < 0.02 or area_ratio > 0.85:
+            return False
+        if width < 80 or height < 40:
+            return False
+        # Car aspect ratio check
+        aspect_ratio = width / height
+        if aspect_ratio < 0.8 or aspect_ratio > 3.5:
+            return False
+    else:  # motorcycle
+        # Motorcycles can be smaller
+        if area_ratio < 0.005 or area_ratio > 0.7:
+            return False
+        if width < 30 or height < 40:
+            return False
+        # Motorcycle aspect ratio check
+        aspect_ratio = width / height
+        if aspect_ratio < 0.3 or aspect_ratio > 2.5:
+            return False
     
     return True
 
-def is_valid_plate_detection_improved(box, image_shape, vehicle_type="motorcycle"):
-    """Improved validation specifically for motorcycle plates in challenging conditions"""
+def is_valid_plate_detection_optimized(box: List[int], image_shape: Tuple[int, int, int], vehicle_type: str) -> bool:
+    """Optimized plate validation with better criteria"""
     x1, y1, x2, y2 = box
     width = x2 - x1
     height = y2 - y1
@@ -282,35 +346,55 @@ def is_valid_plate_detection_improved(box, image_shape, vehicle_type="motorcycle
     
     img_height, img_width = image_shape[:2]
     img_area = img_height * img_width
-    
-    # More flexible area ratio for challenging conditions
     area_ratio = area / img_area
-    if area_ratio < 0.0003 or area_ratio > 0.3:
+    
+    # More flexible area constraints
+    if area_ratio < 0.0002 or area_ratio > 0.25:
         return False
     
-    # Aspect ratio for motorcycle plates (more flexible)
+    # Type-specific aspect ratio validation
     aspect_ratio = width / height
     if vehicle_type == "motorcycle":
-        # Indonesian motorcycle plates can be more square
-        if aspect_ratio < 0.7 or aspect_ratio > 4.0:
+        # Indonesian motorcycle plates: more square format
+        if aspect_ratio < 0.6 or aspect_ratio > 4.5:
+            return False
+        # Minimum size for motorcycles (can be smaller/distant)
+        if width < 12 or height < 6:
             return False
     else:  # car
-        if aspect_ratio < 1.5 or aspect_ratio > 6.0:
+        # Car plates: typically rectangular  
+        if aspect_ratio < 1.2 or aspect_ratio > 6.5:
+            return False
+        # Minimum size for cars
+        if width < 20 or height < 8:
             return False
     
-    # Minimum size check (reduced for distant plates)
-    if width < 15 or height < 8:
+    # Check if plate is not too thin or too small
+    if width < 8 or height < 4:
         return False
     
     return True
 
-def non_maximum_suppression_vehicles(detections, overlap_threshold=0.5):
-    """NMS for vehicle detections"""
+def non_maximum_suppression_optimized(detections: List[Dict], overlap_threshold: float = 0.4) -> List[Dict]:
+    """Optimized NMS with better scoring"""
     if len(detections) == 0:
         return []
     
-    # Sort by confidence
-    detections.sort(key=lambda x: x['confidence'], reverse=True)
+    # Enhanced scoring: combine confidence with detection quality metrics
+    for detection in detections:
+        x1, y1, x2, y2 = detection['box']
+        width = x2 - x1
+        height = y2 - y1
+        aspect_ratio = width / height
+        
+        # Quality score based on size and aspect ratio
+        size_score = min(1.0, (width * height) / 10000)  # Normalize by typical plate size
+        aspect_score = 1.0 if 1.5 <= aspect_ratio <= 4.0 else 0.7  # Prefer typical plate ratios
+        
+        detection['quality_score'] = detection['confidence'] * size_score * aspect_score
+    
+    # Sort by enhanced quality score
+    detections.sort(key=lambda x: x['quality_score'], reverse=True)
     
     keep = []
     for detection in detections:
@@ -321,7 +405,7 @@ def non_maximum_suppression_vehicles(detections, overlap_threshold=0.5):
         for kept_detection in keep:
             kx1, ky1, kx2, ky2 = kept_detection['box']
             
-            # Calculate intersection
+            # Calculate IoU
             inter_x1 = max(x1, kx1)
             inter_y1 = max(y1, ky1)
             inter_x2 = min(x2, kx2)
@@ -330,8 +414,6 @@ def non_maximum_suppression_vehicles(detections, overlap_threshold=0.5):
             if inter_x1 < inter_x2 and inter_y1 < inter_y2:
                 inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
                 area2 = (kx2 - kx1) * (ky2 - ky1)
-                
-                # Calculate IoU
                 union_area = area1 + area2 - inter_area
                 iou = inter_area / union_area if union_area > 0 else 0
                 
@@ -344,54 +426,48 @@ def non_maximum_suppression_vehicles(detections, overlap_threshold=0.5):
     
     return keep
 
-def non_maximum_suppression(detections, overlap_threshold=0.3):
-    """Custom NMS for better duplicate removal"""
-    if len(detections) == 0:
-        return []
+def apply_smart_crop_enhancement(crop: np.ndarray, vehicle_type: str) -> np.ndarray:
+    """Apply final enhancement to the cropped plate region"""
+    if crop.size == 0:
+        return crop
     
-    # Sort by confidence, but also consider vehicle confidence
-    detections.sort(key=lambda x: (x['confidence'] + x.get('vehicle_confidence', 0)) / 2, reverse=True)
+    # Multi-stage enhancement
+    enhanced = crop.copy()
     
-    keep = []
-    for detection in detections:
-        x1, y1, x2, y2 = detection['box']
-        area1 = (x2 - x1) * (y2 - y1)
-        
-        should_keep = True
-        for kept_detection in keep:
-            kx1, ky1, kx2, ky2 = kept_detection['box']
-            
-            # Calculate intersection
-            inter_x1 = max(x1, kx1)
-            inter_y1 = max(y1, ky1)
-            inter_x2 = min(x2, kx2)
-            inter_y2 = min(y2, ky2)
-            
-            if inter_x1 < inter_x2 and inter_y1 < inter_y2:
-                inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
-                area2 = (kx2 - kx1) * (ky2 - ky1)
-                
-                # Calculate IoU
-                union_area = area1 + area2 - inter_area
-                iou = inter_area / union_area if union_area > 0 else 0
-                
-                if iou > overlap_threshold:
-                    should_keep = False
-                    break
-        
-        if should_keep:
-            keep.append(detection)
+    # Stage 1: Noise reduction while preserving edges
+    enhanced = cv2.bilateralFilter(enhanced, 9, 75, 75)
     
-    return keep
+    # Stage 2: Adaptive enhancement based on vehicle type
+    if vehicle_type == "motorcycle":
+        # More aggressive enhancement for motorcycle plates (often smaller/distant)
+        enhanced = apply_advanced_clahe(enhanced, 6.0, (2, 2))
+        # Additional gamma correction
+        table = get_gamma_table(0.6)
+        enhanced = cv2.LUT(enhanced, table)
+    else:  # car
+        # Moderate enhancement for car plates
+        enhanced = apply_advanced_clahe(enhanced, 4.0, (4, 4))
+        table = get_gamma_table(0.8)
+        enhanced = cv2.LUT(enhanced, table)
+    
+    # Stage 3: Sharpening
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    enhanced = cv2.filter2D(enhanced, -1, kernel)
+    
+    # Stage 4: Final contrast adjustment
+    enhanced = cv2.convertScaleAbs(enhanced, alpha=1.2, beta=10)
+    
+    return enhanced
 
-def detect_plate(image_input, vehicle_type):
+def detect_plate(image_input, vehicle_type: str):
+    """Main detection function with optimized pipeline"""
     is_base64 = False
     save_visualization = True
 
     if vehicle_type not in ["car", "motorcycle"]:
         return response_api(400, 'Error', 'Invalid vehicle type', 'Only car or motorcycle are supported.')
 
-    # Load image
+    # Load and validate image
     if isinstance(image_input, str):
         if os.path.isfile(image_input):
             image = cv2.imread(image_input)
@@ -418,47 +494,53 @@ def detect_plate(image_input, vehicle_type):
     debug_info = []
     debug_info.append(f"Image shape: {image.shape}")
     debug_info.append(f"Target vehicle type: {vehicle_type}")
+    debug_info.append(f"Using optimized detection pipeline")
     
-    # Stage 1: Detect vehicles
-    detected_vehicles = detect_vehicles(image, vehicle_type, debug_info)
+    # Stage 1: Detect vehicles with parallel processing
+    detected_vehicles = detect_vehicles_parallel(image, vehicle_type, debug_info)
     
-    # Stage 2: Detect plates within vehicles
-    all_plate_detections = detect_plates_in_vehicles(image, detected_vehicles, vehicle_type, debug_info)
+    # Stage 2: Detect plates within vehicle regions
+    all_plate_detections = detect_plates_in_regions(image, detected_vehicles, vehicle_type, debug_info)
     
-    # Save debug info
+    # Save debug information
     debug_path = os.path.join(output_dir, "debug_log.txt")
     with open(debug_path, 'w') as f:
-        f.write(f"=== TWO-STAGE DETECTION DEBUG LOG ===\n")
+        f.write(f"=== OPTIMIZED DETECTION DEBUG LOG ===\n")
         f.write(f"Total vehicles detected: {len(detected_vehicles)}\n")
         f.write(f"Total plate detections: {len(all_plate_detections)}\n")
         f.write("\n".join(debug_info))
     
     if not all_plate_detections:
         return response_api(400, 'Error', 'No plate detected', 
-                          f'No license plate was detected. Vehicles found: {len(detected_vehicles)}. Check debug log at: {debug_path}')
+                          f'No license plate detected. Vehicles found: {len(detected_vehicles)}. Check debug: {debug_path}')
     
-    # Apply NMS to plate detections
-    unique_plate_detections = non_maximum_suppression(all_plate_detections, overlap_threshold=0.3)
+    # Apply optimized NMS
+    unique_plate_detections = non_maximum_suppression_optimized(all_plate_detections, overlap_threshold=0.3)
     
-    # Update debug log with final results
+    # Update debug with final results
     with open(debug_path, 'a') as f:
         f.write(f"\n=== FINAL RESULTS ===\n")
-        f.write(f"Unique plate detections after NMS: {len(unique_plate_detections)}\n")
+        f.write(f"Unique plates after optimized NMS: {len(unique_plate_detections)}\n")
         for i, det in enumerate(unique_plate_detections[:3]):
-            f.write(f"#{i+1}: conf={det['confidence']:.4f}, method={det['method']}, vehicle_idx={det.get('vehicle_index', 'N/A')}\n")
+            f.write(f"#{i+1}: conf={det['confidence']:.4f}, quality={det.get('quality_score', 0):.4f}\n")
     
     # Select best detection
     best_detection = unique_plate_detections[0]
     x1, y1, x2, y2 = best_detection['box']
     h, w = image.shape[:2]
 
-    # Smart cropping with context
+    # Smart adaptive cropping
     detection_width = x2 - x1
     detection_height = y2 - y1
     
-    # Adaptive margins based on detection size and image size
-    margin_x = max(20, min(int(detection_width * 0.3), w // 10))
-    margin_y = max(15, min(int(detection_height * 0.3), h // 10))
+    # Adaptive margins based on vehicle type and detection size
+    if vehicle_type == "motorcycle":
+        margin_factor = 0.4  # Larger margins for motorcycle plates
+    else:
+        margin_factor = 0.25  # Smaller margins for car plates
+    
+    margin_x = max(15, min(int(detection_width * margin_factor), w // 8))
+    margin_y = max(10, min(int(detection_height * margin_factor), h // 8))
     
     crop_x1 = max(x1 - margin_x, 0)
     crop_y1 = max(y1 - margin_y, 0)
@@ -467,37 +549,17 @@ def detect_plate(image_input, vehicle_type):
 
     crop = image[crop_y1:crop_y2, crop_x1:crop_x2]
     
-    # Enhanced crop post-processing
+    # Apply smart enhancement to crop
     if crop.size > 0:
-        # Apply additional enhancement to the crop
-        crop_lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
-        crop_lab[:,:,0] = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8)).apply(crop_lab[:,:,0])
-        crop = cv2.cvtColor(crop_lab, cv2.COLOR_LAB2BGR)
+        crop = apply_smart_crop_enhancement(crop, vehicle_type)
     
     detect_plate_color = 'UNKNOWN'
 
     if save_visualization:
-        # Create visualizations
-        vis_crop = crop.copy()
+        # Create clean visualizations without boundary boxes or text
         vis_full = image.copy()
         
-        # Draw vehicle bounding boxes
-        for i, vehicle in enumerate(detected_vehicles):
-            vx1, vy1, vx2, vy2 = vehicle['box']
-            cv2.rectangle(vis_full, (vx1, vy1), (vx2, vy2), (255, 0, 0), 2)  # Blue for vehicles
-            cv2.putText(vis_full, f"Vehicle {i+1}", (vx1, vy1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        
-        # Draw license plate bounding box
-        cv2.rectangle(vis_full, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Green for license plate
-        cv2.putText(vis_full, "License Plate", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        
-        # Draw bounding box on crop
-        if crop.size > 0:
-            box_top_left = (x1 - crop_x1, y1 - crop_y1)
-            box_bottom_right = (x2 - crop_x1, y2 - crop_y1)
-            cv2.rectangle(vis_crop, box_top_left, box_bottom_right, (0, 255, 0), 1)
-
-        # Generate filenames
+        # Only save clean images without annotations
         base_name = os.path.splitext(filename)[0]
         crop_filename = f"{base_name}_detected_crop.jpg"
         full_filename = f"{base_name}_detected_full.jpg"
@@ -509,7 +571,8 @@ def detect_plate(image_input, vehicle_type):
         original_path = os.path.join(output_dir, original_filename)
         
         if crop.size > 0:
-            cv2.imwrite(crop_path, vis_crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            cv2.imwrite(crop_path, crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        cv2.rectangle(vis_full, (crop_x1, crop_y1), (crop_x2, crop_y2), (0, 255, 0), 2)
         cv2.imwrite(full_path, vis_full, [cv2.IMWRITE_JPEG_QUALITY, 95])
         cv2.imwrite(original_path, image, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
@@ -532,7 +595,7 @@ if __name__ == "__main__":
     # print(json.dumps(result, indent=4))
     
     # TEST DENGAN BASE64 INPUT
-    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar27.jpeg', "rb") as f:
+    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar28.jpeg', "rb") as f:
         img_bytes = f.read()
         b64_str = base64.b64encode(img_bytes).decode("utf-8")
         b64_input = f"data:image/jpeg;base64,{b64_str}"
