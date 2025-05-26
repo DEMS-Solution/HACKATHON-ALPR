@@ -1,9 +1,15 @@
-from flask import jsonify
+from flask import jsonify, has_app_context
+import json
 
 def response_api(code=200, status='success', message='OK', data=None):
-    return jsonify({
+    payload = {
         'responseCode': code,
         'responseStatus': status,
         'responseMessage': message,
         'responseDetails': data
-    }), code
+    }
+    
+    if has_app_context():
+        return jsonify(payload), code
+    else:
+        return payload
