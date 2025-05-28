@@ -16,9 +16,9 @@ from ultralytics import YOLO
 from Helpers.Helper import response_api
 
 # Load YOLO models - separated for better specialization
-car_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/car.pt')
-motorcycle_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/bike.pt') 
-plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/Config/Yolo/plate.pt')
+car_model = YOLO('C:\laragon\www\HACKATHON-ALPR\Config\Yolo\car.pt')
+motorcycle_model = YOLO('C:\laragon\www\HACKATHON-ALPR\Config\Yolo\motor.pt') 
+plate_model = YOLO('C:\laragon\www\HACKATHON-ALPR\Config\Yolo\plate.pt')
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))
@@ -576,32 +576,34 @@ def detect_plate(image_input, vehicle_type: str):
         cv2.imwrite(full_path, vis_full, [cv2.IMWRITE_JPEG_QUALITY, 95])
         cv2.imwrite(original_path, image, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
-    return response_api(
-        200, 'Success', 'Plate detected successfully',
-        {
-            'plate_type': vehicle_type,
-            'plate_color': detect_plate_color,
-            'plate_number': 'UNKNOWN',
-            'output_folder': output_dir,
-        }
-    )
-
-if __name__ == "__main__":
-    # TEST DENGAN PATH IMAGE LANGSUNG
-    # result = detect_plate(
-    #     '/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar14.jpg',
-    #     "motorcycle"
+    # return response_api(
+    #     200, 'Success', 'Plate detected successfully',
+    #     {
+    #         'plate_type': vehicle_type,
+    #         'plate_color': detect_plate_color,
+    #         'plate_number': 'UNKNOWN',
+    #         'output_folder': output_dir,
+    #     }
     # )
-    # print(json.dumps(result, indent=4))
-    
-    # TEST DENGAN BASE64 INPUT
-    with open('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar28.jpeg', "rb") as f:
-        img_bytes = f.read()
-        b64_str = base64.b64encode(img_bytes).decode("utf-8")
-        b64_input = f"data:image/jpeg;base64,{b64_str}"
-    
-    with delete_debug_yolo():
-        result_b64 = detect_plate(b64_input, "motorcycle")
+    img_path = crop_filename
+    return img_path, vehicle_type
 
-    result_b64.pop('debug', None)
-    print(json.dumps(result_b64, indent=4))
+# if __name__ == "__main__":
+#     # TEST DENGAN PATH IMAGE LANGSUNG
+#     # result = detect_plate(
+#     #     '/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/Testing Apps/Storage/test-gambar/gambar14.jpg',
+#     #     "motorcycle"
+#     # )
+#     # print(json.dumps(result, indent=4))
+    
+#     # TEST DENGAN BASE64 INPUT
+#     with open('C:\DATA\DICKY\HACKATHON\gambar1.jpeg', "rb") as f:
+#         img_bytes = f.read()
+#         b64_str = base64.b64encode(img_bytes).decode("utf-8")
+#         b64_input = f"data:image/jpeg;base64,{b64_str}"
+    
+#     with delete_debug_yolo():
+#         result_b64 = detect_plate(b64_input, "motorcycle")
+
+#     result_b64.pop('debug', None)
+#     print(json.dumps(result_b64, indent=4))

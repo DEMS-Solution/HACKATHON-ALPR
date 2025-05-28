@@ -125,50 +125,36 @@ def preprocess_image(image, plate_type):
         # Konversi ke grayscale
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Normalisasi kontras menggunakan CLAHE
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-        normalized = clahe.apply(gray)
+        # Normalisasi kontras menggunakan CLAHE dengan parameter yang lebih natural
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
         
-        # Reduksi noise menggunakan bilateral filter
-        denoised = cv2.bilateralFilter(normalized, 9, 75, 75)
+        # Blur ringan untuk menghilangkan noise tanpa menghilangkan karakter
+        blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
+        
+        # Peningkatan ketajaman yang lebih halus
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]]) / 9.0
+        sharpened = cv2.filter2D(blurred, -1, kernel)
+        
+        # Normalisasi intensitas
+        normalized = cv2.normalize(sharpened, None, 0, 255, cv2.NORM_MINMAX)
+        
+        # Reduksi noise dengan bilateral filter yang lebih halus
+        denoised = cv2.bilateralFilter(normalized, 5, 75, 75)
         
         if plate_type == "Police":
-            # Untuk plat polisi (kuning-hitam)
-            # Threshold untuk memisahkan karakter kuning dari background hitam
-            _, binary = cv2.threshold(denoised, 127, 255, cv2.THRESH_BINARY)
-            # Inversi untuk mendapatkan karakter hitam di background putih
-            binary = cv2.bitwise_not(binary)
+            # Untuk plat polisi, tingkatkan kontras kuning-hitam
+            denoised = cv2.convertScaleAbs(denoised, alpha=1.2, beta=10)
             
         elif plate_type == "Military":
-            # Untuk plat militer (kuning-merah/biru/hijau)
-            # Threshold untuk memisahkan karakter kuning dari background berwarna
-            _, binary = cv2.threshold(denoised, 127, 255, cv2.THRESH_BINARY)
-            # Inversi untuk mendapatkan karakter hitam di background putih
-            binary = cv2.bitwise_not(binary)
+            # Untuk plat militer, tingkatkan kontras kuning-merah
+            denoised = cv2.convertScaleAbs(denoised, alpha=1.3, beta=5)
             
         else:  # Civil
-            # Untuk plat civil (hitam-putih atau putih-hitam)
-            # Threshold adaptif untuk menangani variasi kontras
-            binary = cv2.adaptiveThreshold(
-                denoised,
-                255,
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY,
-                11,
-                2
-            )
-            # Pastikan karakter hitam di background putih
-            if np.mean(binary) > 127:  # Jika background lebih gelap
-                binary = cv2.bitwise_not(binary)
+            # Untuk plat civil, pertahankan kontras natural
+            denoised = cv2.convertScaleAbs(denoised, alpha=1.1, beta=0)
         
-        # Peningkatan ketajaman menggunakan unsharp masking
-        gaussian = cv2.GaussianBlur(binary, (0, 0), 3.0)
-        sharpened = cv2.addWeighted(binary, 1.5, gaussian, -0.5, 0)
-        
-        # Final threshold untuk memastikan hasil biner yang bersih
-        _, final = cv2.threshold(sharpened, 127, 255, cv2.THRESH_BINARY)
-        
-        return final
+        return denoised
         
     except Exception as e:
         print(f"Error pada preprocessing: {str(e)}")
@@ -215,26 +201,17 @@ def process_image(image_path):
         except Exception as save_error:
             return response_api(400, 'Error', 'Gagal menyimpan gambar', str(save_error))
         
-        return response_api(
-            200, 'Success', 'Plate processed successfully',
-            {
-                'process': 'PreProcessController',
-                'plate_type': plate_type,
-                'plate_color': plate_color,
-                'plate_number': 'UNKNOWN',
-                'output_folder': output_folder
-            }
-        )
+        return grayscale_path, plate_color, plate_type
             
     except Exception as e:
         return response_api(500, 'Error', 'Error pada process_image', str(e))
 
-if __name__ == "__main__":
-    try:
-        # Contoh penggunaan dengan file crop dari YOLOController
-        image_path = '/Users/msultanrafi/Projects/HACKATHON-ALPR/Storage/Uploads/camin11/img64_detected_crop.jpg'
-        result = process_image(image_path)
-        print(json.dumps(result, indent=4))
-    except Exception as e:
-        error_response = response_api(500, 'Error', 'Error pada test_preprocessing', str(e))
-        print(json.dumps(error_response, indent=4))
+# if __name__ == "__main__":
+#     try:
+#         # Contoh penggunaan dengan file crop dari YOLOController
+#         image_path = "C:\\laragon\\www\\HACKATHON-ALPR\\Storage\\Uploads\\img_base64\\img64_detected_crop.jpg"
+#         result = process_image(image_path)
+#         print(json.dumps(result, indent=4))
+#     except Exception as e:
+#         error_response = response_api(500, 'Error', 'Error pada test_preprocessing', str(e))
+#         print(json.dumps(error_response, indent=4))
