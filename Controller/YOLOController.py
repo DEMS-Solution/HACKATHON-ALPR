@@ -184,8 +184,7 @@ def detect_vehicles_parallel(image: np.ndarray, vehicle_type: str, debug_info: L
         method_name, proc_img, conf_thresh = args
         detections = []
         try:
-            with delete_debug_yolo():
-                results = model(proc_img, conf=conf_thresh, imgsz=640, verbose=False)[0]
+            results = model(proc_img, conf=conf_thresh, imgsz=640, verbose=False)[0]
             
             if results.boxes is not None and len(results.boxes) > 0:
                 for result in results.boxes:
@@ -262,8 +261,7 @@ def detect_plates_in_regions(image: np.ndarray, regions: List[Dict], vehicle_typ
             # More aggressive confidence thresholds for cropped regions
             for conf_thresh in [0.05, 0.03, 0.01]:
                 try:
-                    with delete_debug_yolo():
-                        results = plate_model(proc_crop, conf=conf_thresh, iou=0.3, 
+                    results = plate_model(proc_crop, conf=conf_thresh, iou=0.3, 
                                             imgsz=640, augment=True, verbose=False)[0]
                     
                     if results.boxes is not None and len(results.boxes) > 0:
