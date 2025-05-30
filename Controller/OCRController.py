@@ -2,15 +2,15 @@ import cv2
 import numpy as np
 import re
 import os
+import json
+
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
-import json
-from PreProcessController import process_image
-from YOLOController import detect_plate
-from Helpers.Helper import response_api
+from Controller.PreProcessController import process_image
+from Controller.YOLOController import detect_plate
+from Controller.Helpers.Helper import response_api
 
 # Load model YOLO dan PaddleOCR
-yolo_model = YOLO('C:\\laragon\\www\\HACKATHON-ALPR\\Config\\Yolo\\license_plate_detector.pt')
 ocr = PaddleOCR(use_angle_cls=True, lang='ch', drop_score=0.3)
 
 SPECIAL_PLATES = {
@@ -55,14 +55,18 @@ def detect_plate_ocr(image_path, plate_color, plate_type):
     image = cv2.imread(image_path)
     image = resize_image_if_needed(image)
     result = ocr.ocr(image, cls=True)
-    print(result)
+
     if not result:
-        print("❌ Tidak ada teks yang terdeteksi oleh OCR.")
-        return None
+        return {
+            'success': False,
+            'message': 'Tidak ada teks yang terdeteksi oleh OCR.',
+            'plate_text': [],
+            'color': plate_color,
+            'type': 'UNKNOWN'
+        }
 
     plate_texts = []
-
-    plate_type = 'REGULAR'  # default
+    detected_type = 'REGULAR'  # default
 
     for line in result:
         if line is None:
@@ -74,41 +78,35 @@ def detect_plate_ocr(image_path, plate_color, plate_type):
                 if not any(re.match(pattern, text) for pattern in EXCLUDE_PATTERNS):
                     plate_texts.append(text)
 
-    if plate_texts:
-        plate_color = plate_color.strip().lower()
-        best_plate = max(plate_texts, key=len)
-        print("📌 Best Plate Detected (raw):", best_plate)
-        print("📌 Plate Color:", plate_color)
-        if re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'merah kuning':
-            plate_type = 'MILITARY'
-        elif re.match(SPECIAL_PLATES['POLICE'], best_plate) and plate_color == 'hitam kuning':
-            plate_type = 'POLICE'
-        elif re.match(SPECIAL_PLATES['CIVIL'], best_plate) and plate_color == 'hitam putih':
-            plate_type = 'CIVIL'
-        elif re.match(SPECIAL_PLATES['DUMMY'], best_plate) and plate_color == 'hitam putih':
-            plate_type = 'DUMMY'
-        else:
-            plate_type = 'UNKNOWN'
-        print("✅ Detected Plate Text:", best_plate)
-    else:
-        print("⚠️ OCR berhasil, tapi tidak menemukan teks plat yang cocok.")
-        best_plate = None
+    best_plate = None
+    plate_color = plate_color.strip().lower()
 
-    return response_api(200,'Success','Deteksi plat nomor berhasil disimpan.',
-        {
+    if plate_texts:
+        best_plate = max(plate_texts, key=len)
+        if re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'merah kuning':
+            detected_type = 'MILITARY'
+        elif re.match(SPECIAL_PLATES['POLICE'], best_plate) and plate_color == 'hitam kuning':
+            detected_type = 'POLICE'
+        elif re.match(SPECIAL_PLATES['CIVIL'], best_plate) and plate_color == 'hitam putih':
+            detected_type = 'CIVIL'
+        elif re.match(SPECIAL_PLATES['DUMMY'], best_plate) and plate_color == 'hitam putih':
+            detected_type = 'DUMMY'
+        else:
+            detected_type = 'UNKNOWN'
+
+        return {
+            'success': True,
+            'plate_number': best_plate,
             'plate_text': plate_texts,
             'color': plate_color,
-            'type': plate_type
+            'type': detected_type
         }
-    )
+    else:
+        return {
+            'success': False,
+            'message': 'OCR berhasil, tapi tidak menemukan teks plat yang cocok.',
+            'plate_text': [],
+            'color': plate_color,
+            'type': 'UNKNOWN'
+        }
     
-
-if __name__ == "__main__":
-    platDetectPath,vehicle_type = detect_plate('C:\\DATA\\DICKY\\HACKATHON\\gambar7.jpg', 'car')
-    # image_path = 'C:\\laragon\\www\\HACKATHON-ALPR\\Storage\\Uploads\\gambar5\\gambar5_detected_crop.jpg'
-    pathAsli = 'C:\\laragon\\www\\HACKATHON-ALPR\\Storage\\Uploads\\gambar7\\' + platDetectPath
-    detectPath, warna_plat, tipe_plat = process_image(pathAsli)
-    print(tipe_plat)
-    # # # image_gray = 'C:\\laragon\\www\\HACKATHON-ALPR\\Storage\\Uploads\\gambar5\\gambar5_detected_crop.jpg'
-    test = detect_plate_ocr(detectPath, warna_plat, tipe_plat)
-    print(json.dumps(test, indent=4, ensure_ascii=False))

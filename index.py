@@ -10,9 +10,6 @@ from flask_jwt_extended import (
 from Config.db import db
 from flask_sqlalchemy import SQLAlchemy
 
-from Models.PlatNomor import Detection
-from Controller.OCRController import detect_plate
-from Controller.Helpers.Helper import response_api
 from Config.app import create_app
 from Routes.api import api
 

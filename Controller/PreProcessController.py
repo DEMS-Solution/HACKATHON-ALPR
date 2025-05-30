@@ -2,8 +2,9 @@ import cv2
 import numpy as np
 import os
 import json
-from YOLOController import detect_plate
-from Helpers.Helper import response_api
+
+from Controller.YOLOController import detect_plate
+from Controller.Helpers.Helper import response_api
 
 # Inisialisasi output directory
 OUTPUT_DIR = 'Storage/Uploads'
@@ -165,18 +166,54 @@ def process_image(image_path):
     Memproses gambar crop dari YOLOController untuk analisis warna dan preprocessing
     """
     try:
+        # VALIDASI INPUT: Pastikan image_path adalah string, bukan Response object
+        if hasattr(image_path, 'status_code'):  # Flask Response object
+            return response_api(400, 'Error', 'Invalid parameter', 
+                              'Received Response object instead of file path')
+        
+        if not isinstance(image_path, (str, bytes, os.PathLike)):
+            return response_api(400, 'Error', 'Invalid image_path type', 
+                              f'Expected string path, got {type(image_path)}')
+        
+        # Debug: Cek tipe parameter yang masuk (bisa dihapus setelah fixed)
+        print(f"DEBUG: image_path type: {type(image_path)}")
+        print(f"DEBUG: image_path value: {image_path}")
+        
+        # Cek keberadaan file
         if not os.path.exists(image_path):
-            return response_api(400, 'Error', 'File tidak ditemukan', f'File gambar tidak ditemukan di {image_path}')
-            
+            return response_api(400, 'Error', 'File tidak ditemukan', 
+                              f'File gambar tidak ditemukan di {image_path}')
+        
         # Baca gambar plat yang sudah di-crop
         plate_img = cv2.imread(image_path)
         if plate_img is None:
-            return response_api(400, 'Error', 'Gambar plat tidak valid', f'Tidak dapat membaca gambar plat dari {image_path}')
+            return response_api(400, 'Error', 'Gambar plat tidak valid', 
+                              f'Tidak dapat membaca gambar plat dari {image_path}')
         
         # Analisis warna untuk menentukan tipe plat
-        color_analysis = analyze_plate_color(plate_img)
-        plate_type = classify_plate_type(color_analysis)
+        try:
+            color_analysis = analyze_plate_color(plate_img)
+            
+            # Validasi hasil analyze_plate_color
+            if hasattr(color_analysis, 'status_code'):  # Response object
+                return response_api(400, 'Error', 'Error dalam analisis warna', 
+                                  'analyze_plate_color mengembalikan Response object')
+                                  
+        except Exception as color_error:
+            return response_api(400, 'Error', 'Gagal analisis warna plat', str(color_error))
         
+        try:
+            plate_type = classify_plate_type(color_analysis)
+            
+            # Validasi hasil classify_plate_type
+            if hasattr(plate_type, 'status_code'):  # Response object
+                return response_api(400, 'Error', 'Error dalam klasifikasi tipe', 
+                                  'classify_plate_type mengembalikan Response object')
+                                  
+        except Exception as classify_error:
+            return response_api(400, 'Error', 'Gagal klasifikasi tipe plat', str(classify_error))
+        
+        # Tentukan warna plat berdasarkan tipe
         plate_color = 'UNKNOWN'
         if plate_type == "Military":
             plate_color = "Merah Kuning"
@@ -186,32 +223,45 @@ def process_image(image_path):
             plate_color = "Hitam Putih"
         
         # Preprocessing untuk OCR dengan plate_type
-        processed_img = preprocess_image(plate_img, plate_type)
-        if processed_img is None:
-            return response_api(400, 'Error', 'Gagal melakukan preprocessing', 'Gambar hasil preprocessing tidak valid')
-            
-        # Simpan hasil di folder yang sama dengan file input
-        output_folder = os.path.dirname(image_path)
-        base_name = os.path.splitext(os.path.basename(image_path))[0]
-        grayscale_filename = f"{base_name}_grayscale.jpg"
-        grayscale_path = os.path.join(output_folder, grayscale_filename)
-        
         try:
-            cv2.imwrite(grayscale_path, processed_img)
+            processed_img = preprocess_image(plate_img, plate_type)
+            
+            # Validasi hasil preprocess_image
+            if processed_img is None:
+                return response_api(400, 'Error', 'Gagal melakukan preprocessing', 
+                                  'Gambar hasil preprocessing tidak valid')
+            
+            if hasattr(processed_img, 'status_code'):  # Response object
+                return response_api(400, 'Error', 'Error dalam preprocessing', 
+                                  'preprocess_image mengembalikan Response object')
+                                  
+        except Exception as preprocess_error:
+            return response_api(400, 'Error', 'Gagal preprocessing gambar', str(preprocess_error))
+        
+        # Simpan hasil di folder yang sama dengan file input
+        try:
+            output_folder = os.path.dirname(image_path)
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            grayscale_filename = f"{base_name}_grayscale.jpg"
+            grayscale_path = os.path.join(output_folder, grayscale_filename)
+            
+            # Pastikan folder output ada
+            if not os.path.exists(output_folder):
+                os.makedirs(output_folder, exist_ok=True)
+            
+            # Simpan gambar hasil preprocessing
+            success = cv2.imwrite(grayscale_path, processed_img)
+            if not success:
+                return response_api(400, 'Error', 'Gagal menyimpan gambar', 
+                                  'cv2.imwrite gagal menyimpan file')
+                
         except Exception as save_error:
             return response_api(400, 'Error', 'Gagal menyimpan gambar', str(save_error))
         
+        # Return tuple dengan hasil yang valid
         return grayscale_path, plate_color, plate_type
-            
+        
     except Exception as e:
+        print(f"DEBUG: Exception in process_image: {str(e)}")
+        print(f"DEBUG: Exception type: {type(e)}")
         return response_api(500, 'Error', 'Error pada process_image', str(e))
-
-# if __name__ == "__main__":
-#     try:
-#         # Contoh penggunaan dengan file crop dari YOLOController
-#         image_path = "C:\\laragon\\www\\HACKATHON-ALPR\\Storage\\Uploads\\img_base64\\img64_detected_crop.jpg"
-#         result = process_image(image_path)
-#         print(json.dumps(result, indent=4))
-#     except Exception as e:
-#         error_response = response_api(500, 'Error', 'Error pada test_preprocessing', str(e))
-#         print(json.dumps(error_response, indent=4))
