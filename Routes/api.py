@@ -1,8 +1,10 @@
+import uuid, os
+import hmac
+
 from flask import Blueprint, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 from datetime import datetime
-import uuid, os
 
 from Config.db import db
 from Models.PlatNomor import Detection
@@ -17,14 +19,30 @@ USERS = {
     "admin": "password123"
 }
 
+ALLOWED_FIELDS = {'username', 'password'}
+
 @api.route('/api/v1.0/login', methods=['POST'])
 def login():
-    username = request.json.get("username")
-    password = request.json.get("password")
+    if not request.is_json:
+        return response_api(400, 'Error', 'Invalid input', 'Request must be in JSON format')
 
-    if USERS.get(username) == password:
+    data = request.get_json()
+
+    extra_fields = set(data.keys()) - ALLOWED_FIELDS
+    if extra_fields:
+        return response_api(400, 'Error', 'Unexpected fields', f'Invalid fields in request: {", ".join(extra_fields)}')
+
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return response_api(400, 'Error', 'Missing credentials', 'Username and password are required')
+
+    stored_password = USERS.get(username)
+    if stored_password and hmac.compare_digest(stored_password, password):
         access_token = create_access_token(identity=username)
         return response_api(200, 'Success', 'Login successful', {'access_token': access_token})
+
     return response_api(401, 'Error', 'Invalid credentials', 'Invalid username or password')
 
 
@@ -33,12 +51,10 @@ def upload_image():
     data = request.get_json()
 
     if not data:
-        return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with "vehicle_type" and "image_path".')
+        return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with image_path.')
     
     # Validasi keberadaan field wajib
     missing_fields = []
-    if 'vehicle_type' not in data or not data.get('vehicle_type'):
-        missing_fields.append('vehicle_type')
     if 'image_path' not in data or not data.get('image_path'):
         missing_fields.append('image_path')
     
@@ -50,9 +66,6 @@ def upload_image():
             f'Harap sertakan field: {", ".join(missing_fields)} dalam body JSON.'
         )
     
-    vehicle_type = data['vehicle_type']
-    if vehicle_type not in ['car', 'motorcycle']:
-        return response_api(400, 'Error', 'Invalid vehicle type.', 'Vehicle type harus berupa "car" atau "motorcycle".')
     image_path = data['image_path']
     bypass_detect = data.get('bypass_detect', False) 
     
@@ -71,11 +84,11 @@ def upload_image():
             
             result = detect_plate_ocr(detectPath, warna_plat, tipe_plat)
             if not result['success']:
-                return response_api(400, 'Error', result['message'], None)
+                return response_api(400, 'Error', result['message'], 'Plat nomor tidak terdeteksi.')
             
             plate_number = result.get("plate_number", "UNKNOWN")
             if plate_number == "UNKNOWN":
-                return response_api(400, 'Error', 'Plat nomor tidak terdeteksi.', None)
+                return response_api(400, 'Error', 'Plat nomor tidak terdeteksi.', 'Gagal melakukan OCR')
             
             # Cek data terakhir di DB
             last_detection = Detection.query.filter_by(
@@ -98,13 +111,13 @@ def upload_image():
             return response_api(500, 'Error', 'Error in bypass detect flow', str(e))
     
     try:
-        detect_result = detect_plate(image_path, vehicle_type)
+        detect_result = detect_plate(image_path)
         
         if hasattr(detect_result, 'status_code'):
             platDetectPath = image_path
             
-        elif isinstance(detect_result, tuple) and len(detect_result) == 4:
-            platDetectPath, full_path, original_path, vehicle_type = detect_result
+        elif isinstance(detect_result, tuple) and len(detect_result) == 3:
+            platDetectPath, full_path, original_path = detect_result
             
             if not isinstance(platDetectPath, str):
                 return response_api(500, 'Error', 'Invalid plate detection path', 
@@ -141,11 +154,11 @@ def upload_image():
     try:
         result = detect_plate_ocr(detectPath, warna_plat, tipe_plat)
         if not result['success']:
-            return response_api(400, 'Error', result['message'], None)
+            return response_api(400, 'Error', result['message'], 'Plat nomor tidak terdeteksi.')
         
         plate_number = result.get("plate_number", "UNKNOWN")
         if plate_number == "UNKNOWN":
-            return response_api(400, 'Error', 'Plat nomor tidak terdeteksi.', None)
+            return response_api(400, 'Error', 'Plat nomor tidak terdeteksi.', 'Gagal melakukan OCR')
             
     except Exception as ocr_error:
         return response_api(500, 'Error', 'Error in OCR detection', str(ocr_error))
@@ -198,9 +211,32 @@ def upload_image():
     
 @api.route('/api/v1.0/history', methods=['GET'])
 def get_history():
-    detections = Detection.query.order_by(Detection.timestamp.desc()).all()
-    return response_api(200, 'Success', 'History retrieved successfully',
-                        [d.to_dict() for d in detections])
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+
+        pagination = Detection.query.order_by(Detection.timestamp.desc()).paginate(page=page, per_page=per_page, error_out=False)
+        detections = pagination.items
+
+        result = {
+            'data': [d.to_dict() for d in detections],
+            'pagination': {
+                'page': pagination.page,
+                'per_page': pagination.per_page,
+                'total_items': pagination.total,
+                'total_pages': pagination.pages,
+                'has_next': pagination.has_next,
+                'has_prev': pagination.has_prev,
+            }
+        }
+
+        if not result['data']:
+            return response_api(400, 'Error', 'No history found', 'No Data')
+
+        return response_api(200, 'Success', 'History retrieved successfully', result)
+
+    except Exception as e:
+        return response_api(500, 'Error', 'Internal server error', str(e))
 
 
 @api.route('/api/v1.0/validate', methods=['POST'])
