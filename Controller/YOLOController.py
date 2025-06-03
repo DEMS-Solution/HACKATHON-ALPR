@@ -456,10 +456,13 @@ def apply_smart_crop_enhancement(crop: np.ndarray, vehicle_type: str) -> np.ndar
     
     return enhanced
 
-def detect_plate(image_input):
+def detect_plate(image_input, vehicle_type: str):
     """Main detection function with optimized pipeline"""
     is_base64 = False
     save_visualization = True
+
+    if vehicle_type not in ["car", "motorcycle"]:
+        return response_api(400, 'Error', 'Invalid vehicle type', 'Only car or motorcycle are supported.')
 
     # Load and validate image
     if isinstance(image_input, str):
@@ -484,32 +487,18 @@ def detect_plate(image_input):
 
     # Create output folder
     output_dir, folder_name = create_output_folder(filename, is_base64)
-
+    
     debug_info = []
     debug_info.append(f"Image shape: {image.shape}")
-    debug_info.append("Detecting vehicle type...")
-
-    # Stage 1: Detect vehicles with both models
-    car_detections = detect_vehicles_parallel(image, "car", debug_info)
-    motorcycle_detections = detect_vehicles_parallel(image, "motorcycle", debug_info)
-
-    # Determine which vehicle type has higher confidence or more detections
-    if len(car_detections) == 0 and len(motorcycle_detections) == 0:
-        return response_api(400, 'Error', 'No vehicle detected', 'Image does not contain detectable vehicles.')
-
-    if len(car_detections) >= len(motorcycle_detections):
-        detected_vehicles = car_detections
-        vehicle_type = "car"
-    else:
-        detected_vehicles = motorcycle_detections
-        vehicle_type = "motorcycle"
-
-    debug_info.append(f"Detected vehicle type: {vehicle_type}")
+    debug_info.append(f"Target vehicle type: {vehicle_type}")
     debug_info.append(f"Using optimized detection pipeline")
-
+    
+    # Stage 1: Detect vehicles with parallel processing
+    detected_vehicles = detect_vehicles_parallel(image, vehicle_type, debug_info)
+    
     # Stage 2: Detect plates within vehicle regions
     all_plate_detections = detect_plates_in_regions(image, detected_vehicles, vehicle_type, debug_info)
-
+    
     # Save debug information
     debug_path = os.path.join(output_dir, "debug_log.txt")
     with open(debug_path, 'w') as f:
@@ -517,21 +506,21 @@ def detect_plate(image_input):
         f.write(f"Total vehicles detected: {len(detected_vehicles)}\n")
         f.write(f"Total plate detections: {len(all_plate_detections)}\n")
         f.write("\n".join(debug_info))
-
+    
     if not all_plate_detections:
-        return response_api(400, 'Error', 'No plate detected',
-                            f'No license plate detected. Vehicles found: {len(detected_vehicles)}. Check debug: {debug_path}')
-
+        return response_api(400, 'Error', 'No plate detected', 
+                          f'No license plate detected. Vehicles found: {len(detected_vehicles)}. Check debug: {debug_path}')
+    
     # Apply optimized NMS
     unique_plate_detections = non_maximum_suppression_optimized(all_plate_detections, overlap_threshold=0.3)
-
+    
     # Update debug with final results
     with open(debug_path, 'a') as f:
         f.write(f"\n=== FINAL RESULTS ===\n")
         f.write(f"Unique plates after optimized NMS: {len(unique_plate_detections)}\n")
         for i, det in enumerate(unique_plate_detections[:3]):
             f.write(f"#{i+1}: conf={det['confidence']:.4f}, quality={det.get('quality_score', 0):.4f}\n")
-
+    
     # Select best detection
     best_detection = unique_plate_detections[0]
     x1, y1, x2, y2 = best_detection['box']
@@ -540,43 +529,48 @@ def detect_plate(image_input):
     # Smart adaptive cropping
     detection_width = x2 - x1
     detection_height = y2 - y1
-
-    # Adaptive margins based on detected vehicle type
+    
+    # Adaptive margins based on vehicle type and detection size
     if vehicle_type == "motorcycle":
-        margin_factor = 0.4
+        margin_factor = 0.4  # Larger margins for motorcycle plates
     else:
-        margin_factor = 0.25
-
+        margin_factor = 0.25  # Smaller margins for car plates
+    
     margin_x = max(15, min(int(detection_width * margin_factor), w // 8))
     margin_y = max(10, min(int(detection_height * margin_factor), h // 8))
-
+    
     crop_x1 = max(x1 - margin_x, 0)
     crop_y1 = max(y1 - margin_y, 0)
     crop_x2 = min(x2 + margin_x, w - 1)
     crop_y2 = min(y2 + margin_y, h - 1)
 
     crop = image[crop_y1:crop_y2, crop_x1:crop_x2]
-
+    
+    # Apply smart enhancement to crop
     if crop.size > 0:
         crop = apply_smart_crop_enhancement(crop, vehicle_type)
-
+    
     detect_plate_color = 'UNKNOWN'
 
     if save_visualization:
+        # Create clean visualizations without boundary boxes or text
         vis_full = image.copy()
+        
+        # Only save clean images without annotations
         base_name = os.path.splitext(filename)[0]
         crop_filename = f"{base_name}_detected_crop.jpg"
         full_filename = f"{base_name}_detected_full.jpg"
         original_filename = f"{base_name}_original.jpg"
-
+        
+        # Save files
         crop_path = os.path.join(output_dir, crop_filename)
         full_path = os.path.join(output_dir, full_filename)
         original_path = os.path.join(output_dir, original_filename)
-
+        
         if crop.size > 0:
             cv2.imwrite(crop_path, crop, [cv2.IMWRITE_JPEG_QUALITY, 95])
         cv2.rectangle(vis_full, (crop_x1, crop_y1), (crop_x2, crop_y2), (0, 255, 0), 2)
         cv2.imwrite(full_path, vis_full, [cv2.IMWRITE_JPEG_QUALITY, 95])
         cv2.imwrite(original_path, image, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
-    return crop_path, full_path, original_path
+    return crop_path, full_path, original_path, vehicle_type

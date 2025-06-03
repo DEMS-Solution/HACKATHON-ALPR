@@ -51,10 +51,12 @@ def upload_image():
     data = request.get_json()
 
     if not data:
-        return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with image_path.')
+        return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with vehicle type or image_path.')
     
     # Validasi keberadaan field wajib
     missing_fields = []
+    if 'vehicle_type' not in data or not data.get('vehicle_type'):
+        missing_fields.append('vehicle_type')
     if 'image_path' not in data or not data.get('image_path'):
         missing_fields.append('image_path')
     
@@ -66,9 +68,13 @@ def upload_image():
             f'Harap sertakan field: {", ".join(missing_fields)} dalam body JSON.'
         )
     
+    vehicle_type = data['vehicle_type']
     image_path = data['image_path']
     bypass_detect = data.get('bypass_detect', False) 
     
+    if vehicle_type not in ['car', 'motorcycle']:
+        return response_api(400, 'Error', 'Invalid vehicle type', 'Tipe kendaraan tidak valid.')
+
     if bypass_detect:
         try:
             process_result = process_image(image_path)
@@ -111,13 +117,13 @@ def upload_image():
             return response_api(500, 'Error', 'Error in bypass detect flow', str(e))
     
     try:
-        detect_result = detect_plate(image_path)
+        detect_result = detect_plate(image_path, vehicle_type)
         
         if hasattr(detect_result, 'status_code'):
             platDetectPath = image_path
             
-        elif isinstance(detect_result, tuple) and len(detect_result) == 3:
-            platDetectPath, full_path, original_path = detect_result
+        elif isinstance(detect_result, tuple) and len(detect_result) == 4:
+            platDetectPath, full_path, original_path, vehicle_type = detect_result
             
             if not isinstance(platDetectPath, str):
                 return response_api(500, 'Error', 'Invalid plate detection path', 
