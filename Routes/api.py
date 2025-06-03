@@ -30,9 +30,9 @@ def login():
 
 @api.route('/api/v1.0/detection', methods=['POST'])
 def upload_image():
-    # Ambil data JSON dari request
+  
     data = request.get_json()
-    
+
     if not data:
         return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with "vehicle_type" and "image_path".')
     
@@ -217,9 +217,7 @@ def upload_image():
         'detected_path': full_path,
         'original_path': original_path,
         'crop_path': platDetectPath,
-    })
-
-    
+    }) 
     
 @api.route('/api/v1.0/history', methods=['GET'])
 def get_history():
