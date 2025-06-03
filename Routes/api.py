@@ -30,7 +30,6 @@ def login():
 
 @api.route('/api/v1.0/detection', methods=['POST'])
 def upload_image():
-  
     data = request.get_json()
 
     if not data:
@@ -94,28 +93,6 @@ def upload_image():
                     'original_path': original_path,
                     'crop_path': platDetectPath,
                 })
-            
-            # Simpan deteksi baru
-            detection = Detection(
-                id=uuid.uuid4(),
-                plate_number=plate_number,
-                image_path=full_path,
-                type=tipe_plat,
-                color=warna_plat,
-                timestamp=datetime.now(),
-                is_validated=False
-            )
-            db.session.add(detection)
-            db.session.commit()
-            
-            return response_api(200, 'Success', 'Plat nomor berhasil disimpan.', {
-                'plate_number': plate_number,
-                'type': tipe_plat,
-                'color': warna_plat,
-                'detected_path': full_path,
-                'original_path': original_path,
-                'crop_path': platDetectPath,
-            })
             
         except Exception as e:
             return response_api(500, 'Error', 'Error in bypass detect flow', str(e))
