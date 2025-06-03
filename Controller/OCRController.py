@@ -15,7 +15,7 @@ ocr = PaddleOCR(use_angle_cls=True, lang='ch', drop_score=0.3)
 
 SPECIAL_PLATES = {
     'MILITARY': r'^\d{4}-\d{2}$',
-    'POLICE': r'^\d{4}-\d{2}$',
+    'POLICE': r'^\d{4}-(\d{1,5}|[IVXLCDM]{1,5})$',
     'DUMMY': r'^XX\d{3,4}ZZ$',
     'CIVIL': r'^[A-Z]{1,2}\d{1,4}[A-Z]{0,3}$'
 }
@@ -79,17 +79,17 @@ def detect_plate_ocr(image_path, plate_color, plate_type):
                     plate_texts.append(text)
 
     best_plate = None
-    plate_color = plate_color.strip().lower()
 
     if plate_texts:
         best_plate = max(plate_texts, key=len)
-        if re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'merah kuning':
+        print(plate_color)
+        if (re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'Merah Kuning') or (re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'Biru Kuning') or (re.match(SPECIAL_PLATES['MILITARY'], best_plate) and plate_color == 'Hijau Kuning'):
             detected_type = 'MILITARY'
-        elif re.match(SPECIAL_PLATES['POLICE'], best_plate) and plate_color == 'hitam kuning':
+        elif re.match(SPECIAL_PLATES['POLICE'], best_plate) and plate_color == 'Hitam Kuning':
             detected_type = 'POLICE'
-        elif re.match(SPECIAL_PLATES['CIVIL'], best_plate) and plate_color == 'hitam putih':
+        elif re.match(SPECIAL_PLATES['CIVIL'], best_plate) and plate_color == 'Hitam Putih':
             detected_type = 'CIVIL'
-        elif re.match(SPECIAL_PLATES['DUMMY'], best_plate) and plate_color == 'hitam putih':
+        elif re.match(SPECIAL_PLATES['DUMMY'], best_plate) and plate_color == 'Hitam Putih':
             detected_type = 'DUMMY'
         else:
             detected_type = 'UNKNOWN'
