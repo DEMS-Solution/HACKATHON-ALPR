@@ -15,9 +15,9 @@ from ultralytics import YOLO
 from Controller.Helpers.Helper import response_api
 
 # Load YOLO models - separated for better specialization
-car_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/HACKATHON-ALPR/Config/Yolo/car.pt')
-motorcycle_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/HACKATHON-ALPR/Config/Yolo/motor.pt') 
-plate_model = YOLO('/Users/eki/File Eki/2023 - 2024/Kerjaan/Hackathon/DEMS/HACKATHON-ALPR/Config/Yolo/plate.pt')
+car_model = YOLO('/Users/msultanrafi/Projects/HACKATHON-ALPR/Config/Yolo/car.pt')
+motorcycle_model = YOLO('/Users/msultanrafi/Projects/HACKATHON-ALPR/Config/Yolo/motor.pt') 
+plate_model = YOLO('/Users/msultanrafi/Projects/HACKATHON-ALPR/Config/Yolo/plate.pt')
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 upload_folder = os.getenv('UPLOAD_FOLDER', os.path.abspath(os.path.join(base_dir, '..', 'Storage', 'Uploads')))

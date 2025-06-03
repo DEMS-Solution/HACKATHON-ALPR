@@ -100,8 +100,8 @@ def classify_plate_type(color_analysis):
     # Militer Merah
     if (red_percent > 3.0 and 
          yellow_percent > 0.01 and 
-         black_percent < 10.0 and 
-         white_percent < 10.0) :
+         black_percent < 20.0 and 
+         white_percent < 20.0) :
         return "Military"
     
     # Kategori Polisi:
@@ -122,19 +122,24 @@ def classify_military_color(color_analysis):
     red_percent = colors['red']
     green_percent = colors['green']
     blue_percent = colors['blue']
+    black_percent = colors['black']
+    white_percent = colors['white']
+    yellow_percent = colors['yellow']
     
     # # Debug: Tampilkan persentase warna
     # print("\n=== DEBUG WARNA MILITER ===")
     # print(f"Merah: {red_percent:.2f}%")
-    # print(f"Kuning: {yellow_percent:.2f}%")
     # print(f"Hijau: {green_percent:.2f}%")
     # print(f"Biru: {blue_percent:.2f}%")
+    # print(f"Hitam: {black_percent:.2f}%")
+    # print(f"Putih: {white_percent:.2f}%")
+    # print(f"Kuning: {yellow_percent:.2f}%")
     # print("===========================\n")
     
     # Klasifikasi berdasarkan warna dominan
     if red_percent > 6.5 and green_percent < 0.1 and blue_percent < 0.1:
         return "Merah Kuning"
-    elif green_percent > 2.5 and red_percent < 6.5:
+    elif green_percent > 2.5 and red_percent < 7.0:
         return "Hijau Kuning"
     elif blue_percent > 2.5 and red_percent < 6.5:
         return "Biru Kuning"
@@ -244,7 +249,7 @@ def process_image(image_path):
             plate_color = "Hitam Kuning"
         elif plate_type == "Civil":
             plate_color = "Hitam Putih"
-        
+
         # Preprocessing untuk OCR dengan plate_type
         try:
             processed_img = preprocess_image(plate_img, plate_type)
