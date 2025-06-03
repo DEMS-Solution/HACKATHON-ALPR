@@ -93,30 +93,53 @@ def classify_plate_type(color_analysis):
     yellow_percent = colors['yellow']
     black_percent = colors['black']
     white_percent = colors['white']
+    green_percent = colors['green']
+    blue_percent = colors['blue']
     
     # Kategori Militer:
-    # - Merah > 3%
-    # - Kuning > 0.02%
-    # - Hitam dan Putih < 10%
+    # Militer Merah
     if (red_percent > 3.0 and 
-        yellow_percent > 0.02 and 
-        black_percent < 10.0 and 
-        white_percent < 10.0):
+         yellow_percent > 0.01 and 
+         black_percent < 10.0 and 
+         white_percent < 10.0) :
         return "Military"
     
     # Kategori Polisi:
-    # - Kuning > 2%
-    # - Hitam > 5%
-    elif yellow_percent > 2.0 and black_percent > 5.0:
+    elif yellow_percent > 2.0 and black_percent > 5.0 and red_percent < 3.0:
         return "Police"
     
     # Kategori Civil:
-    # - Hitam > 15%
-    # - Putih > 15%
-    elif black_percent > 15.0 and white_percent > 15.0:
+    elif black_percent > 15.0 and white_percent > 15.0 and red_percent < 3.0 and yellow_percent < 2.0:
         return "Civil"
     
     return "Unknown"
+
+def classify_military_color(color_analysis):
+    """
+    Mengklasifikasikan warna plat militer berdasarkan persentase warna
+    """
+    colors = color_analysis['all_colors']
+    red_percent = colors['red']
+    green_percent = colors['green']
+    blue_percent = colors['blue']
+    
+    # # Debug: Tampilkan persentase warna
+    # print("\n=== DEBUG WARNA MILITER ===")
+    # print(f"Merah: {red_percent:.2f}%")
+    # print(f"Kuning: {yellow_percent:.2f}%")
+    # print(f"Hijau: {green_percent:.2f}%")
+    # print(f"Biru: {blue_percent:.2f}%")
+    # print("===========================\n")
+    
+    # Klasifikasi berdasarkan warna dominan
+    if red_percent > 6.5 and green_percent < 0.1 and blue_percent < 0.1:
+        return "Merah Kuning"
+    elif green_percent > 2.5 and red_percent < 6.5:
+        return "Hijau Kuning"
+    elif blue_percent > 2.5 and red_percent < 6.5:
+        return "Biru Kuning"
+    else:
+        return "Merah Kuning"  # Default jika tidak bisa ditentukan dengan jelas
 
 def preprocess_image(image, plate_type):
     """
@@ -216,7 +239,7 @@ def process_image(image_path):
         # Tentukan warna plat berdasarkan tipe
         plate_color = 'UNKNOWN'
         if plate_type == "Military":
-            plate_color = "Merah Kuning"
+            plate_color = classify_military_color(color_analysis)
         elif plate_type == "Police":
             plate_color = "Hitam Kuning"
         elif plate_type == "Civil":
