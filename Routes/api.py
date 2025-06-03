@@ -48,26 +48,44 @@ def login():
 
 @api.route('/api/v1.0/detection', methods=['POST'])
 def upload_image():
+    if not request.is_json:
+        return response_api(
+            400,
+            'Error',
+            'Invalid input format.',
+            'Request content-type must be application/json.'
+        )
+
     data = request.get_json()
 
     if not data:
-        return response_api(400, 'Error', 'Invalid or missing JSON body.', 'Expected JSON with vehicle type or image_path.')
-    
-    # Validasi keberadaan field wajib
-    missing_fields = []
-    if 'vehicle_type' not in data or not data.get('vehicle_type'):
-        missing_fields.append('vehicle_type')
-    if 'image_path' not in data or not data.get('image_path'):
-        missing_fields.append('image_path')
-    
+        return response_api(
+            400,
+            'Error',
+            'Invalid or missing JSON body.',
+            'Expected JSON with fields: image_path and vehicle_type.'
+        )
+
+    allowed_fields = {'image_path', 'vehicle_type'}
+    extra_fields = set(data.keys()) - allowed_fields
+    if extra_fields:
+        return response_api(
+            400,
+            'Error',
+            'Unexpected fields in request body.',
+            f'Fields not allowed: {", ".join(extra_fields)}.'
+        )
+
+    # Check for missing or empty fields
+    missing_fields = [field for field in allowed_fields if not data.get(field)]
     if missing_fields:
         return response_api(
             400,
             'Error',
             f'Missing required field(s): {", ".join(missing_fields)}.',
-            f'Harap sertakan field: {", ".join(missing_fields)} dalam body JSON.'
+            f'Please provide valid values for: {", ".join(missing_fields)}.'
         )
-    
+
     vehicle_type = data['vehicle_type']
     image_path = data['image_path']
     bypass_detect = data.get('bypass_detect', False) 

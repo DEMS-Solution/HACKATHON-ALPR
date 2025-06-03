@@ -549,8 +549,6 @@ def detect_plate(image_input, vehicle_type: str):
     # Apply smart enhancement to crop
     if crop.size > 0:
         crop = apply_smart_crop_enhancement(crop, vehicle_type)
-    
-    detect_plate_color = 'UNKNOWN'
 
     if save_visualization:
         # Create clean visualizations without boundary boxes or text
