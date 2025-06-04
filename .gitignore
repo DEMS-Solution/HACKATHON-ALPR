@@ -9,6 +9,9 @@ Storage/Uploads/
 # C extensions
 *.so
 
+# Storage Folder
+Storage/Uploads
+
 # Distribution / packaging
 .Python
 build/
