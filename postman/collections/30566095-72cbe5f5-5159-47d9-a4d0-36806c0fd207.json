@@ -1434,7 +1434,14 @@
 			},
 			"request": {
 				"auth": {
-					"type": "bearer"
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "asdsadasdasdadas",
+							"type": "string"
+						}
+					]
 				},
 				"method": "POST",
 				"header": [],
