@@ -1743,7 +1743,14 @@
 			},
 			"request": {
 				"auth": {
-					"type": "bearer"
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "asdasdasdasda",
+							"type": "string"
+						}
+					]
 				},
 				"method": "GET",
 				"header": []
