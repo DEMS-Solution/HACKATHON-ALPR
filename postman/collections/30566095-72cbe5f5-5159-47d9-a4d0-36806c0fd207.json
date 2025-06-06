@@ -1109,11 +1109,13 @@
 					"query": [
 						{
 							"key": "page",
-							"value": "(halaman)"
+							"value": "(halaman)",
+							"description": "Data pada halaman yang ingin ditampilkan"
 						},
 						{
 							"key": "per_page",
-							"value": "(jumlah_perhalaman)"
+							"value": "(jumlah_perhalaman)",
+							"description": "Jumlah data pada satu halamana, yang ingin ditampilkan"
 						}
 					]
 				},
