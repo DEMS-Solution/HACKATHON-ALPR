@@ -1735,6 +1735,9 @@
 				"disableBodyPruning": true
 			},
 			"request": {
+				"auth": {
+					"type": "bearer"
+				},
 				"method": "GET",
 				"header": []
 			},
