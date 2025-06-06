@@ -246,7 +246,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"abcd\"\n}",
+							"raw": "{\n  \"username\": \"admin\",\n  \"passwrd\": \"abcd\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -280,7 +280,7 @@
 						},
 						{
 							"key": "Date",
-							"value": "Fri, 06 Jun 2025 19:27:34 GMT"
+							"value": "Fri, 06 Jun 2025 20:15:46 GMT"
 						},
 						{
 							"key": "Content-Type",
@@ -288,7 +288,7 @@
 						},
 						{
 							"key": "Content-Length",
-							"value": "163"
+							"value": "167"
 						},
 						{
 							"key": "Access-Control-Allow-Origin",
@@ -301,7 +301,7 @@
 					],
 					"cookie": [],
 					"responseTime": null,
-					"body": "{\n    \"responseCode\": 400,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Invalid credentials\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Invalid username or password\"\n}"
+					"body": "{\n    \"responseCode\": 400,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Unexpected fields\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Invalid fields in request: passwrd\"\n}"
 				},
 				{
 					"id": "30566095-2f57a9a0-8d57-4e1e-96d3-1ca0b8233144",
