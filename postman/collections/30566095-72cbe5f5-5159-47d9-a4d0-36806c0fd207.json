@@ -1761,5 +1761,32 @@
 				}
 			]
 		}
+	],
+	"auth": {
+		"type": "bearer"
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"id": "a86529e7-9a57-4466-87ad-01c59ff1091e",
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"id": "b3759fed-c77f-4e45-81bb-b92d0b5cf7a0",
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
 	]
 }
