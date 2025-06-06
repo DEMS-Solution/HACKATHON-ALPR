@@ -1,0 +1,11 @@
+opencv-python
+numpy
+ultralytics
+paddleocr
+Flask
+Flask-Cors
+Flask-JWT-Extended
+Flask-SQLAlchemy
+python-dotenv
+mysql-connector-python
+Werkzeug
