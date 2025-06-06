@@ -311,7 +311,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"username\": \"admin\",\n  \"password\": \"abcd\"\n}",
+							"raw": "{\n  \"username\": \"admin\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -345,7 +345,7 @@
 						},
 						{
 							"key": "Date",
-							"value": "Fri, 06 Jun 2025 19:27:22 GMT"
+							"value": "Fri, 06 Jun 2025 20:15:34 GMT"
 						},
 						{
 							"key": "Content-Type",
@@ -353,7 +353,7 @@
 						},
 						{
 							"key": "Content-Length",
-							"value": "163"
+							"value": "169"
 						},
 						{
 							"key": "Access-Control-Allow-Origin",
@@ -366,7 +366,7 @@
 					],
 					"cookie": [],
 					"responseTime": null,
-					"body": "{\n    \"responseCode\": 400,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Invalid credentials\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Invalid username or password\"\n}"
+					"body": "{\n    \"responseCode\": 400,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Missing credentials\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Username and password are required\"\n}"
 				},
 				{
 					"id": "30566095-8c46237a-bff1-469e-9b1e-1e1276a48e92",
