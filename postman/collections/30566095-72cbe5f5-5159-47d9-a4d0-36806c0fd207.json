@@ -1740,55 +1740,6 @@
 					"body": "{\n    \"responseCode\": 401,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Missing token\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Missing Authorization Header\"\n}"
 				}
 			]
-		},
-		{
-			"name": "/api/v1.0/gate-status/<plate>",
-			"id": "30566095-6eed0296-fc19-4b7a-951b-2307b9ddd8fe",
-			"protocolProfileBehavior": {
-				"disableBodyPruning": true
-			},
-			"request": {
-				"auth": {
-					"type": "bearer",
-					"bearer": [
-						{
-							"key": "token",
-							"value": "asdasdasdasda",
-							"type": "string"
-						}
-					]
-				},
-				"method": "GET",
-				"header": []
-			},
-			"response": [
-				{
-					"id": "30566095-88f69726-2b5e-4eb9-abbe-57efc79ff5e1",
-					"name": "[200] Success - Gate Opened",
-					"originalRequest": {
-						"method": "GET",
-						"header": []
-					},
-					"_postman_previewlanguage": null,
-					"header": null,
-					"cookie": [],
-					"responseTime": null,
-					"body": null
-				},
-				{
-					"id": "30566095-0c10146d-438b-4f6f-86fe-3d9c861d8c51",
-					"name": "[403] Failed - Gate Closed",
-					"originalRequest": {
-						"method": "GET",
-						"header": []
-					},
-					"_postman_previewlanguage": null,
-					"header": null,
-					"cookie": [],
-					"responseTime": null,
-					"body": null
-				}
-			]
 		}
 	],
 	"auth": {
