@@ -1740,6 +1740,50 @@
 					"body": "{\n    \"responseCode\": 401,\n    \"responseStatus\": \"Error\",\n    \"responseMessage\": \"Missing token\",\n    \"responseDetails\": null,\n    \"errorMessage\": \"Missing Authorization Header\"\n}"
 				}
 			]
+		},
+		{
+			"name": "[VIDEO/GIF MAKER] /api/v1/photo/video",
+			"id": "30566095-39edbe5a-8b5f-449f-93ff-dc569f4ff86c",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"uuid\": \"7EA0C\",\n    \"duration\": 5000,\n    \"loop\": 4\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://127.0.0.1:5000/api/v1/photo/video",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "5000",
+					"path": [
+						"api",
+						"v1",
+						"photo",
+						"video"
+					]
+				},
+				"description": "Generated from cURL: curl -X POST http://127.0.0.1:5000/api/v1/photo/video \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"uuid\": \"7EA0C\",\n    \"duration\": 5000,\n    \"loop\": 4\n}'"
+			},
+			"response": []
 		}
 	],
 	"auth": {
